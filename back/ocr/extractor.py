@@ -10,16 +10,13 @@ from paddleocr import PaddleOCRVL
 
 class PDFExtractor:
     def __init__(self):
-        # Usunięto stałe ładowanie modelu do pamięci
         pass
 
     def extract_page(self, file_bytes: bytes, page_num: int) -> dict:
         doc = pymupdf.open(stream=file_bytes, filetype="pdf")
 
         if page_num < 1 or page_num > len(doc):
-            raise ValueError(
-                f"Nieprawidłowy numer strony. Dokument ma {len(doc)} stron."
-            )
+            raise ValueError(f"Invalid page. Max page number: {len(doc)}")
 
         page = doc[page_num - 1]
         pix = page.get_pixmap()
@@ -33,7 +30,6 @@ class PDFExtractor:
         elif pix.n == 3:
             img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
 
-        # Inicjalizacja modelu w momencie otrzymania żądania
         pipeline = PaddleOCRVL()
         output = pipeline.predict(img_array)
 
@@ -63,11 +59,9 @@ class PDFExtractor:
                 }
             )
 
-        # Usunięcie instancji modelu i wymuszenie zwolnienia pamięci systemowej
         del pipeline
         gc.collect()
 
-        # Opróżnienie bufora pamięci VRAM karty graficznej dla środowiska PaddlePaddle
         try:
             import paddle
 

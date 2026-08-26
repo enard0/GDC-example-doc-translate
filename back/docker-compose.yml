@@ -1,0 +1,45 @@
+services:
+  manager:
+    build:
+      context: ./manager
+    ports:
+      - "8080:8000"
+    depends_on:
+      - ocr
+      - translate
+    networks:
+      - internal_net
+
+  ocr:
+    build:
+      context: ./ocr
+    volumes:
+      - ./ocr/.paddlex:/root/.paddlex
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - internal_net
+
+  translate:
+    build:
+      context: ./translate
+    volumes:
+      - ./translate/Hy-MT2-7B:/app/Hy-MT2-7B 
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - internal_net
+
+networks:
+  internal_net:
+    driver: bridge

@@ -1,26 +1,24 @@
 import os
 import requests
-import fitz  # PyMuPDF
+import pymupdf
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import Response
 
 app = FastAPI()
 
-OCR_API_URL = "http://127.0.0.1:8000/extract-layout"
-TRANSLATOR_API_URL = "http://127.0.0.1:8001/translate"
-FONT_PATH = "C:\\Windows\\Fonts\\arial.ttf"
+OCR_API_URL = "http://ocr:8001/extract-layout"
+TRANSLATOR_API_URL = "http://translate:8002/translate"
+FONT_PATH = "./fonts/arial.ttf"
 
 
 @app.post("/process-pdf")
-async def process_pdf(file: UploadFile = File(...)):
+async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
     if not os.path.exists(FONT_PATH):
-        raise HTTPException(
-            status_code=500, detail=f"Brak czcionki w ścieżce: {FONT_PATH}"
-        )
+        raise HTTPException(status_code=500, detail=f"Font not found: {FONT_PATH}")
 
     pdf_bytes = await file.read()
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
 
     for page_num in range(1, len(doc) + 1):
         files = {"file": (file.filename, pdf_bytes, "application/pdf")}
@@ -30,24 +28,28 @@ async def process_pdf(file: UploadFile = File(...)):
         if ocr_response.status_code != 200:
             raise HTTPException(
                 status_code=502,
-                detail=f"Błąd serwisu OCR (strona {page_num}): {ocr_response.text}",
+                detail=f"OCR service error (page {page_num}): {ocr_response.text}",
             )
 
         extracted_json = ocr_response.json()
 
-        trans_response = requests.post(TRANSLATOR_API_URL, json=extracted_json)
+        trans_response = requests.post(
+            TRANSLATOR_API_URL,
+            json=extracted_json,
+            params={"target_lang": language},
+        )
 
         if trans_response.status_code != 200:
             raise HTTPException(
                 status_code=502,
-                detail=f"Błąd serwisu Tłumacza (strona {page_num}): {trans_response.text}",
+                detail=f"Translate service error (page {page_num}): {trans_response.text}",
             )
 
         translated_json = trans_response.json()
         blocks = translated_json.get("blocks", [])
 
         page = doc[page_num - 1]
-        page.insert_font(fontname="arial_pl", fontfile=FONT_PATH)
+        page.insert_font(fontname="arial", fontfile=FONT_PATH)
         page_width = page.rect.width
 
         valid_blocks = [b for b in blocks if "bbox" in b]
@@ -127,7 +129,7 @@ async def process_pdf(file: UploadFile = File(...)):
                 current_x1 = x1
 
                 while True:
-                    expanded_rect = fitz.Rect(x0 - 1, y0 - 2, current_x1 + 2, y1 + 2)
+                    expanded_rect = pymupdf.Rect(x0 - 1, y0 - 2, current_x1 + 2, y1 + 2)
                     page.draw_rect(
                         expanded_rect, color=(1, 0, 0), fill=(1, 1, 1), width=0.5
                     )
@@ -136,7 +138,7 @@ async def process_pdf(file: UploadFile = File(...)):
                         expanded_rect,
                         block["text"],
                         fontsize=font_size,
-                        fontname="arial_pl",
+                        fontname="arial",
                         color=(0, 0, 0),
                         align=0,
                     )
