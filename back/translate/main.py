@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import uvicorn
 import traceback
+import gc
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 import torch
 
@@ -19,23 +20,47 @@ class PageData(BaseModel):
     blocks: List[Block]
 
 
+class TranslationEngine:
+    def __init__(self):
+        self.model = None
+        self.tokenizer = None
+        self.local_model_path = "./Hy-MT2-7B"
+
+    def _init_models(self):
+        if self.tokenizer is None:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.local_model_path, local_files_only=True
+            )
+        if self.model is None:
+            quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.local_model_path,
+                device_map="auto",
+                quantization_config=quantization_config,
+                torch_dtype=torch.float16,
+                local_files_only=True,
+            )
+
+    def unload_models(self):
+        if self.model:
+            del self.model
+            self.model = None
+        if self.tokenizer:
+            del self.tokenizer
+            self.tokenizer = None
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
 app = FastAPI(title="Translation API Service")
+engine = TranslationEngine()
 
 
 @app.post("/translate", response_model=PageData)
 async def translate_page(data: PageData, target_lang: str):
-    local_model_path = "./Hy-MT2-7B"
-    torch
-    tokenizer = AutoTokenizer.from_pretrained(local_model_path, local_files_only=True)
-    quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-
-    model = AutoModelForCausalLM.from_pretrained(
-        local_model_path,
-        device_map="auto",
-        quantization_config=quantization_config,
-        torch_dtype=torch.float16,
-        local_files_only=True,
-    )
+    engine._init_models()
 
     text_labels = [
         "text",
@@ -46,12 +71,15 @@ async def translate_page(data: PageData, target_lang: str):
         "number",
         "abstract",
         "references",
+        "reference",
         "footnotes",
+        "footnote",
         "table_of_contents",
         "figure_caption",
         "table_caption",
         "figure_title",
         "list",
+        "table",
     ]
 
     try:
@@ -75,21 +103,21 @@ async def translate_page(data: PageData, target_lang: str):
                 },
             ]
 
-            prompt = tokenizer.apply_chat_template(
+            prompt = engine.tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
             print(f"Prompt: {source_text}")
-            inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+            inputs = engine.tokenizer(prompt, return_tensors="pt").to("cuda")
 
-            outputs = model.generate(
+            outputs = engine.model.generate(
                 **inputs,
                 max_new_tokens=2048,
                 do_sample=False,
-                pad_token_id=tokenizer.eos_token_id,
+                pad_token_id=engine.tokenizer.eos_token_id,
             )
             input_length = inputs.input_ids.shape[1]
             generated_tokens = outputs[0][input_length:]
-            translated_texts = tokenizer.decode(
+            translated_texts = engine.tokenizer.decode(
                 generated_tokens, skip_special_tokens=True
             ).split("‡")
             print(f"Translated Texts: {translated_texts}")
@@ -103,5 +131,15 @@ async def translate_page(data: PageData, target_lang: str):
         raise HTTPException(status_code=500, detail="Error during translation.")
 
 
+@app.post("/shutdown-models")
+async def shutdown_models():
+    try:
+        engine.unload_models()
+        return {"detail": "Translator models unloaded successfully, VRAM cleared."}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8002)

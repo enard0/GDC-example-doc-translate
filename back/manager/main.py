@@ -4,11 +4,26 @@ import pymupdf
 import uvicorn
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import Response
+import re
+
+
+def process_latex_to_html(text: str) -> str:
+    text = text.replace("$", "").replace("\\$", "")
+    text = re.sub(r"\\underline\{\\text\{([^}]+)\}\}", r"<u>\1</u>", text)
+    text = re.sub(r"\\underline\{([^}]+)\}", r"<u>\1</u>", text)
+    text = re.sub(r"\\textbf\{([^}]+)\}", r"<b>\1</b>", text)
+    text = re.sub(r"\^\{([^}]+)\}", r"<sup>\1</sup>", text)
+    text = text.replace("\\geq", "≥").replace("\\leq", "≤")
+    text = re.sub(r"\\mathbb\{([^}]+)\}", r"\1", text)
+    return text
+
 
 app = FastAPI()
 
 OCR_API_URL = "http://ocr:8001/extract-layout"
+OCR_SHUTDOWN_URL = "http://ocr:8001/shutdown-models"
 TRANSLATOR_API_URL = "http://translate:8002/translate"
+TRANSLATOR_SHUTDOWN_URL = "http://translate:8002/shutdown-models"
 FONT_PATH = "./fonts/arial.ttf"
 
 
@@ -19,6 +34,8 @@ async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
 
     pdf_bytes = await file.read()
     doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+
+    extracted_pages = []
 
     for page_num in range(1, len(doc) + 1):
         files = {"file": (file.filename, pdf_bytes, "application/pdf")}
@@ -31,8 +48,14 @@ async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
                 detail=f"OCR service error (page {page_num}): {ocr_response.text}",
             )
 
-        extracted_json = ocr_response.json()
+        extracted_pages.append(ocr_response.json())
 
+    try:
+        requests.post(OCR_SHUTDOWN_URL, timeout=10)
+    except requests.exceptions.RequestException as e:
+        print(f"Freeing OCR model error: {e}")
+
+    for page_num, extracted_json in enumerate(extracted_pages, start=1):
         trans_response = requests.post(
             TRANSLATOR_API_URL,
             json=extracted_json,
@@ -83,12 +106,15 @@ async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
             "number",
             "abstract",
             "references",
+            "reference",
             "footnotes",
+            "footnote",
             "table_of_contents",
             "figure_caption",
             "table_caption",
             "figure_title",
             "list",
+            "table",
         ]
 
         for block in blocks:
@@ -131,33 +157,60 @@ async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
                 while True:
                     expanded_rect = pymupdf.Rect(x0 - 1, y0 - 2, current_x1 + 2, y1 + 2)
                     page.draw_rect(
-                        expanded_rect, color=(1, 0, 0), fill=(1, 1, 1), width=0.5
+                        expanded_rect, color=(0, 0, 0), fill=(1, 1, 1), width=0
                     )
 
-                    rc = page.insert_textbox(
-                        expanded_rect,
-                        block["text"],
-                        fontsize=font_size,
-                        fontname="arial",
-                        color=(0, 0, 0),
-                        align=0,
-                    )
+                    original_text = block.get("text", "")
 
-                    if rc >= 0:
+                    if block.get("type") == "table" or "<table>" in original_text:
+                        html_table = original_text.replace("\\n", "<br>").replace(
+                            "\n", ""
+                        )
+                        css = f"""
+                        table {{ border-collapse: collapse; width: 100%; }} 
+                        td {{ border: 1px solid black; padding: 2px; font-size: {font_size}px; font-family: sans-serif; }}
+                        """
+                        page.insert_htmlbox(expanded_rect, html_table, css=css)
                         break
 
-                    if current_x1 < limit_x1 - 1:
-                        current_x1 = min(current_x1 + 15, limit_x1)
-                    elif font_size >= 4.5:
-                        font_size -= 0.5
+                    processed_text = process_latex_to_html(original_text)
+
+                    if "<" in processed_text and ">" in processed_text:
+                        css = f"p {{ font-size: {font_size}px; font-family: sans-serif; margin: 0; color: black; }}"
+                        html_content = f"<p>{processed_text}</p>"
+                        page.insert_htmlbox(expanded_rect, html_content, css=css)
+                        break
                     else:
-                        break
+                        rc = page.insert_textbox(
+                            expanded_rect,
+                            processed_text,
+                            fontsize=font_size,
+                            fontname="arial",
+                            color=(0, 0, 0),
+                            align=0,
+                        )
+
+                        if rc >= 0:
+                            break
+
+                        if current_x1 < limit_x1 - 1:
+                            current_x1 = min(current_x1 + 15, limit_x1)
+                        elif font_size >= 4.5:
+                            font_size -= 0.5
+                        else:
+                            break
+
             elif "bbox" in block:
                 if block.get("type") in text_labels:
                     page.draw_rect(
                         block["bbox"], color=(0, 0, 1), fill=(1, 1, 1), width=0.5
                     )
-                    print(block.get("text"))
+
+    try:
+        requests.post(TRANSLATOR_SHUTDOWN_URL, timeout=10)
+    except requests.exceptions.RequestException as e:
+        print(f"Freeing translation model error: {e}")
+
     output_pdf_bytes = doc.write()
 
     return Response(

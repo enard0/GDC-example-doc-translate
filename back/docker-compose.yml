@@ -14,7 +14,7 @@ services:
     build:
       context: ./ocr
     volumes:
-      - ./ocr/.paddlex:/root/.paddlex
+      - ./ocr/models:/models/
     deploy:
       resources:
         reservations:
