@@ -50,3 +50,4 @@ urllib3==2.7.0
     # via requests
 uvicorn==0.52.4
     # via -r requirements.in
+nh3

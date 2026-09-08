@@ -2,12 +2,17 @@ import os
 import requests
 import pymupdf
 import uvicorn
+import base64
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import Response
 import re
+import nh3
 
 
 def process_latex_to_html(text: str) -> str:
+    allowed_tags = {"b", "u", "sup", "sub"}
+    text = nh3.clean(text, tags=allowed_tags, attributes={})
+
     text = text.replace("$", "").replace("\\$", "")
     text = re.sub(r"\\underline\{\\text\{([^}]+)\}\}", r"<u>\1</u>", text)
     text = re.sub(r"\\underline\{([^}]+)\}", r"<u>\1</u>", text)
@@ -15,14 +20,15 @@ def process_latex_to_html(text: str) -> str:
     text = re.sub(r"\^\{([^}]+)\}", r"<sup>\1</sup>", text)
     text = text.replace("\\geq", "≥").replace("\\leq", "≤")
     text = re.sub(r"\\mathbb\{([^}]+)\}", r"\1", text)
+
     return text
 
 
 app = FastAPI()
 
-OCR_API_URL = "http://ocr:8001/extract-layout"
+OCR_API_URL = "http://ocr:8001/predict"
 OCR_SHUTDOWN_URL = "http://ocr:8001/shutdown-models"
-TRANSLATOR_API_URL = "http://translate:8002/translate"
+TRANSLATOR_API_URL = "http://translate:8002/predict"
 TRANSLATOR_SHUTDOWN_URL = "http://translate:8002/shutdown-models"
 FONT_PATH = "./fonts/arial.ttf"
 
@@ -35,12 +41,13 @@ async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
     pdf_bytes = await file.read()
     doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
 
+    file_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
     extracted_pages = []
 
     for page_num in range(1, len(doc) + 1):
-        files = {"file": (file.filename, pdf_bytes, "application/pdf")}
-        data = {"page": page_num}
-        ocr_response = requests.post(OCR_API_URL, files=files, data=data)
+        ocr_payload = {"instances": [{"file_base64": file_base64, "page": page_num}]}
+        ocr_response = requests.post(OCR_API_URL, json=ocr_payload)
 
         if ocr_response.status_code != 200:
             raise HTTPException(
@@ -48,7 +55,7 @@ async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
                 detail=f"OCR service error (page {page_num}): {ocr_response.text}",
             )
 
-        extracted_pages.append(ocr_response.json())
+        extracted_pages.append(ocr_response.json().get("predictions", [])[0])
 
     try:
         requests.post(OCR_SHUTDOWN_URL, timeout=10)
@@ -56,11 +63,10 @@ async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
         print(f"Freeing OCR model error: {e}")
 
     for page_num, extracted_json in enumerate(extracted_pages, start=1):
-        trans_response = requests.post(
-            TRANSLATOR_API_URL,
-            json=extracted_json,
-            params={"target_lang": language},
-        )
+        trans_payload = {
+            "instances": [{"data": extracted_json, "target_lang": language}]
+        }
+        trans_response = requests.post(TRANSLATOR_API_URL, json=trans_payload)
 
         if trans_response.status_code != 200:
             raise HTTPException(
@@ -68,7 +74,7 @@ async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
                 detail=f"Translate service error (page {page_num}): {trans_response.text}",
             )
 
-        translated_json = trans_response.json()
+        translated_json = trans_response.json().get("predictions", [])[0]
         blocks = translated_json.get("blocks", [])
 
         page = doc[page_num - 1]
@@ -162,10 +168,21 @@ async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
 
                     original_text = block.get("text", "")
 
-                    if block.get("type") == "table" or "<table>" in original_text:
-                        html_table = original_text.replace("\\n", "<br>").replace(
-                            "\n", ""
+                    if block.get("type") == "table":
+                        allowed_tags = {
+                            "table",
+                            "tr",
+                            "td",
+                            "th",
+                            "tbody",
+                            "thead",
+                            "br",
+                        }
+                        safe_text = nh3.clean(
+                            original_text, tags=allowed_tags, attributes={}
                         )
+
+                        html_table = safe_text.replace("\\n", "<br>").replace("\n", "")
                         css = f"""
                         table {{ border-collapse: collapse; width: 100%; }} 
                         td {{ border: 1px solid black; padding: 2px; font-size: {font_size}px; font-family: sans-serif; }}
@@ -221,4 +238,4 @@ async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8002, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

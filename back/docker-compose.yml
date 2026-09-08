@@ -3,18 +3,20 @@ services:
     build:
       context: ./manager
     ports:
-      - "8080:8000"
+      - "8000:8000"
     depends_on:
       - ocr
       - translate
-    networks:
-      - internal_net
-
   ocr:
     build:
       context: ./ocr
+    environment:
+      - AIP_HTTP_PORT=8001
+      - MODEL_GCS_PATH=/models
+    ports:
+      - "8001:8001"
     volumes:
-      - ./ocr/models:/models/
+      - ./ocr/models:/models 
     deploy:
       resources:
         reservations:
@@ -22,14 +24,17 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    networks:
-      - internal_net
 
   translate:
     build:
       context: ./translate
+    environment:
+      - AIP_HTTP_PORT=8002
+      - MODEL_GCS_PATH=/models/Hy-MT2-7B
+    ports:
+      - "8002:8002"
     volumes:
-      - ./translate/Hy-MT2-7B:/app/Hy-MT2-7B 
+      - ./translate/Hy-MT2-7B:/models/Hy-MT2-7B 
     deploy:
       resources:
         reservations:
@@ -37,9 +42,3 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    networks:
-      - internal_net
-
-networks:
-  internal_net:
-    driver: bridge

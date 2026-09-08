@@ -12,18 +12,24 @@ class PDFExtractor:
     def __init__(self):
         self.pipeline = None
         self.ocr = None
+        # Uses GCS mount path via environment variable, falling back to local directory
+        self.model_base_path = os.environ.get("MODEL_GCS_PATH", "/models")
 
     def _init_models(self):
         if self.pipeline is None:
             self.pipeline = PaddleOCRVL(
-                layout_detection_model_dir="/models/PP-DocLayoutV3",
-                vl_rec_model_dir="/models/PaddleOCR-VL-1.6",
+                layout_detection_model_dir=os.path.join(
+                    self.model_base_path, "PP-DocLayoutV3"
+                ),
+                vl_rec_model_dir=os.path.join(self.model_base_path, "PaddleOCR-VL-1.6"),
             )
         if self.ocr is None:
             self.ocr = PaddleOCR(
-                det_model_dir="/models/PP-OCRv6_medium_det",
-                rec_model_dir="/models/PP-OCRv6_medium_rec",
-                cls_model_dir="/models/PP-LCNet_x1_0_textline_ori",
+                det_model_dir=os.path.join(self.model_base_path, "PP-OCRv6_medium_det"),
+                rec_model_dir=os.path.join(self.model_base_path, "PP-OCRv6_medium_rec"),
+                cls_model_dir=os.path.join(
+                    self.model_base_path, "PP-LCNet_x1_0_textline_ori"
+                ),
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=False,
