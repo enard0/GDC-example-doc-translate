@@ -1,4 +1,3 @@
-import os
 import base64
 import traceback
 import uvicorn
@@ -46,5 +45,4 @@ async def shutdown_models():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("AIP_HTTP_PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

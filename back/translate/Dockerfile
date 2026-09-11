@@ -22,4 +22,4 @@ COPY . .
 EXPOSE 8002
 
 # Wymuszenie nasłuchiwania na interfejsie 0.0.0.0
-CMD ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["python3", "main.py"]

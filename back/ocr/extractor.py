@@ -12,8 +12,7 @@ class PDFExtractor:
     def __init__(self):
         self.pipeline = None
         self.ocr = None
-        # Uses GCS mount path via environment variable, falling back to local directory
-        self.model_base_path = os.environ.get("MODEL_GCS_PATH", "/models")
+        self.model_base_path = "/models"
 
     def _init_models(self):
         if self.pipeline is None:

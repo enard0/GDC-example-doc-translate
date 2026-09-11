@@ -1,4 +1,3 @@
-import os
 import gc
 import traceback
 import re
@@ -39,7 +38,7 @@ class TranslationEngine:
     def __init__(self):
         self.model = None
         self.tokenizer = None
-        self.local_model_path = os.environ.get("MODEL_GCS_PATH", "./Hy-MT2-7B")
+        self.local_model_path = "/models/Hy-MT2-7B"
 
     def _init_models(self):
         if self.tokenizer is None:
@@ -188,5 +187,4 @@ async def shutdown_models():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("AIP_HTTP_PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=8002)
