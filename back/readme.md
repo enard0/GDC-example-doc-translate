@@ -7,11 +7,11 @@ Follow these steps to initialize and interact with the translation pipeline in a
 
 *   Execute the deployment script to build the Docker images and start the internal network containers:
     ```bash
-    bash build_and_deploy.sh
+    ./build_and_deploy.sh
     ```
 *   Open a web browser and navigate to the interactive Swagger UI at `http://localhost:8000/docs`.
 *   Locate the `/process-pdf` POST endpoint within the interface.
-*   Upload a document using the `file` parameter and specify the target language using the `language` form field (default is `pl`).
+*   Upload a document using the `file` parameter and specify the target language using the `language` form field (default is `polish`). Has to be name of the language, not code.
 *   Execute the request to process the document and receive the translated PDF as a direct file download.
 
 ---
@@ -31,7 +31,7 @@ To deploy the system on a machine without internet access, export the required d
 *   Verify the required model weights (e.g., the `Hy-MT2-7B` directory) and font assets are fully downloaded to your local filesystem.
 *   Compress the model directory and fonts into a portable archive:
     ```bash
-    tar -czvf assets.tar.gz ./Hy-MT2-7B ./fonts
+    tar -czvf assets.tar.gz ./translate/Hy-MT2-7B ./fonts
     ```
 
 ## Import (Offline Machine)

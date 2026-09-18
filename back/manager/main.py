@@ -7,6 +7,9 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import Response
 import re
 import nh3
+from fastapi.middleware.cors import CORSMiddleware
+
+from languages import TargetLanguage
 
 
 def process_latex_to_html(text: str) -> str:
@@ -25,21 +28,31 @@ def process_latex_to_html(text: str) -> str:
 
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 OCR_API_URL = "http://ocr:8001/predict"
 OCR_SHUTDOWN_URL = "http://ocr:8001/shutdown-models"
 TRANSLATOR_API_URL = "http://translate:8002/predict"
 TRANSLATOR_SHUTDOWN_URL = "http://translate:8002/shutdown-models"
-FONT_PATH = "./fonts/arial.ttf"
+FONT_PATH = "./arial.ttf"
 
 
 @app.post("/process-pdf")
-async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
+async def process_pdf(
+    file: UploadFile = File(...), language: TargetLanguage = Form(TargetLanguage.polish)
+):
     if not os.path.exists(FONT_PATH):
         raise HTTPException(status_code=500, detail=f"Font not found: {FONT_PATH}")
 
     pdf_bytes = await file.read()
     doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    target_lang_str = language.value
 
     file_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
 
@@ -64,7 +77,7 @@ async def process_pdf(file: UploadFile = File(...), language: str = Form("pl")):
 
     for page_num, extracted_json in enumerate(extracted_pages, start=1):
         trans_payload = {
-            "instances": [{"data": extracted_json, "target_lang": language}]
+            "instances": [{"data": extracted_json, "target_lang": target_lang_str}]
         }
         trans_response = requests.post(TRANSLATOR_API_URL, json=trans_payload)
 

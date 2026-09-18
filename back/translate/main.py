@@ -51,7 +51,7 @@ class TranslationEngine:
                 self.local_model_path,
                 device_map="auto",
                 quantization_config=quantization_config,
-                torch_dtype=torch.float16,
+                dtype=torch.float16,
                 local_files_only=True,
             )
 
