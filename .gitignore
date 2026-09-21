@@ -1,5 +1,5 @@
 examples
 .vscode
-back/translate/Hy-MT2-7B
-back/ocr/.paddlex
-back/ocr/models
+translate/Hy-MT2-7B
+ocr/models
+.env

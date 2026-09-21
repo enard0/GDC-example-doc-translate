@@ -4,3 +4,6 @@ pymupdf
 requests
 python-multipart
 nh3
+pika
+boto3
+sse-starlette

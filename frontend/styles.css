@@ -66,3 +66,13 @@ button:disabled {
     font-size: 14px;
     color: #444444;
 }
+
+#status.success {
+    color: #008000;
+    font-weight: 600;
+}
+
+#status.error {
+    color: #cc0000;
+    font-weight: 600;
+}

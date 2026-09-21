@@ -1,0 +1,137 @@
+services:
+  manager:
+    build:
+      context: ./manager
+    ports:
+      - "8000:8000"
+    environment:
+      - S3_USER=${SYS_ADMIN_USER}
+      - S3_PASS=${SYS_ADMIN_PASS}
+      - RMQ_USER=${SYS_ADMIN_USER}
+      - RMQ_PASS=${SYS_ADMIN_PASS}
+    depends_on:
+      ocr:
+        condition: service_started
+      translate:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  ocr:
+    build:
+      context: ./ocr
+    environment:
+      - AIP_HTTP_PORT=8001
+      - MODEL_GCS_PATH=/models
+      - S3_USER=${SYS_ADMIN_USER}
+      - S3_PASS=${SYS_ADMIN_PASS}
+      - RMQ_USER=${SYS_ADMIN_USER}
+      - RMQ_PASS=${SYS_ADMIN_PASS}
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./ocr/models:/models 
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  translate:
+    build:
+      context: ./translate
+    environment:
+      - AIP_HTTP_PORT=8002
+      - MODEL_GCS_PATH=/models/Hy-MT2-7B
+      - S3_USER=${SYS_ADMIN_USER}
+      - S3_PASS=${SYS_ADMIN_PASS}
+      - RMQ_USER=${SYS_ADMIN_USER}
+      - RMQ_PASS=${SYS_ADMIN_PASS}
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./translate/Hy-MT2-7B:/models/Hy-MT2-7B 
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq_broker
+    ports:
+      - "5672:5672" 
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${SYS_ADMIN_USER}
+      RABBITMQ_DEFAULT_PASS: ${SYS_ADMIN_PASS}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: minio_storage
+    ports:
+      - "9000:9000" 
+      - "9001:9001" 
+    environment:
+      MINIO_ROOT_USER: ${SYS_ADMIN_USER}
+      MINIO_ROOT_PASSWORD: ${SYS_ADMIN_PASS}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: quay.io/minio/mc:latest
+    container_name: minio_setup
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set local_minio http://minio:9000 ${SYS_ADMIN_USER} ${SYS_ADMIN_PASS};
+      /usr/bin/mc mb local_minio/translation-jobs --ignore-existing;
+      /usr/bin/mc anonymous set public local_minio/translation-jobs;
+      exit 0;
+      "
+
+  frontend:
+    image: nginx:alpine
+    container_name: web_frontend
+    ports:
+      - "80:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      - manager
+      
+volumes:
+  rabbitmq_data:
+  minio_data:
