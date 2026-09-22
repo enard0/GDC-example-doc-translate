@@ -69,6 +69,7 @@ def process_message(ch, method, properties, body):
     data = json.loads(body)
     job_id = data["job_id"]
     target_lang = data["target_lang"]
+    filename = data.get("filename", "document.pdf")
 
     publish_job_event(job_id, "OCR_PROCESSING")
 
@@ -94,12 +95,14 @@ def process_message(ch, method, properties, body):
         extractor.unload_models()
 
         publish_job_event(job_id, "OCR_COMPLETED")
+        # Pass filename to the next queue
         publish_to_queue(
-            "translation_queue", {"job_id": job_id, "target_lang": target_lang}
+            "translation_queue",
+            {"job_id": job_id, "target_lang": target_lang, "filename": filename},
         )
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
         publish_job_event(job_id, "FAILED")
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)

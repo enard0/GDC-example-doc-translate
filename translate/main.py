@@ -103,6 +103,7 @@ def process_message(ch, method, properties, body):
     data = json.loads(body)
     job_id = data["job_id"]
     target_lang = data["target_lang"]
+    filename = data.get("filename", "document.pdf")
 
     publish_job_event(job_id, "TRANSLATING")
 
@@ -318,15 +319,19 @@ def process_message(ch, method, properties, body):
                         )
 
         output_pdf_bytes = doc.write()
+
+        base_name = filename.rsplit(".", 1)[0]
+        download_name = f"{base_name}-{target_lang}.pdf"
+
         s3_client.put_object(
             Bucket=BUCKET_NAME,
             Key=f"{job_id}/final_translated.pdf",
             Body=output_pdf_bytes,
             ContentType="application/pdf",
+            ContentDisposition=f'attachment; filename="{download_name}"',
         )
 
         engine.unload_models()
-
         publish_job_event(job_id, "COMPLETED")
         ch.basic_ack(delivery_tag=method.delivery_tag)
 

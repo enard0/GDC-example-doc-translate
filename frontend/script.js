@@ -63,19 +63,20 @@ uploadForm.addEventListener('submit', async (e) => {
             const eventData = JSON.parse(event.data);
             const currentStatus = eventData.status;
 
-            // Format status (e.g., "OCR_PROCESSING" -> "OCR PROCESSING")
+            // Format status
             statusDiv.textContent = `Current state: ${currentStatus.replace('_', ' ')}...`;
 
-            // 4. Handle pipeline termination states
+            // Trigger list refresh on EVERY state change, not just at the end
+            fetchAndRenderJobs();
+
+            // Handle pipeline termination states
             if (currentStatus === "COMPLETED") {
                 eventSource.close();
                 statusDiv.textContent = "Translation complete. Downloading document...";
                 statusDiv.className = "success";
                 
-                // Construct the public MinIO URL based on the architecture
                 const downloadUrl = `http://localhost:9000/translation-jobs/${jobId}/final_translated.pdf`;
                 
-                // Trigger native browser download
                 const a = document.createElement('a');
                 a.href = downloadUrl;
                 a.download = `translated_${jobId}.pdf`;
@@ -102,3 +103,53 @@ uploadForm.addEventListener('submit', async (e) => {
         submitBtn.disabled = false;
     }
 });
+
+const jobTableBody = document.getElementById('jobTableBody');
+const MINIO_BASE_URL = "http://localhost:9000/translation-jobs";
+
+async function fetchAndRenderJobs() {
+    try {
+        const response = await fetch('http://localhost:8000/jobs');
+        const jobs = await response.json();
+        
+        jobTableBody.innerHTML = '';
+        
+        jobs.forEach(job => {
+            const tr = document.createElement('tr');
+            const statusFormatted = job.status.replace('_', ' ');
+            const sourceUrl = `${MINIO_BASE_URL}/${job.job_id}/source.pdf`;
+            const resultUrl = `${MINIO_BASE_URL}/${job.job_id}/final_translated.pdf`;
+            
+            const docName = job.filename || "Unknown Document";
+            const lang = job.language || "unknown";
+            
+            const resultLinkHtml = job.status === 'COMPLETED' 
+                ? `<a href="${resultUrl}">Result</a>` 
+                : `<span class="disabled-link">Result</span>`;
+
+            tr.innerHTML = `
+                <td>
+                    <div class="doc-name">
+                        <strong class="doc-text">${docName}</strong>
+                        <span class="tooltiptext">${docName}</span>
+                    </div>
+                    <span class="lang-label">${lang}</span>
+                </td>
+                <td>${job.timestamp}</td>
+                <td>${statusFormatted}</td>
+                <td>
+                    <a href="${sourceUrl}" class="source-link" target="_blank">Source</a>
+                    ${resultLinkHtml}
+                </td>
+            `;
+            
+            jobTableBody.appendChild(tr);
+        });
+    } catch (error) {
+        console.error("Failed to fetch jobs:", error);
+    }
+}
+
+// Call on page load
+fetchAndRenderJobs();
+setInterval(fetchAndRenderJobs, 5000);

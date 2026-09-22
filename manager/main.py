@@ -10,6 +10,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 import uvicorn
+import sqlite3
 
 from languages import TargetLanguage
 
@@ -34,6 +35,24 @@ BUCKET_NAME = "translation-jobs"
 # --- SSE State Variables ---
 subscribers = {}
 loop = None
+
+
+def init_db():
+    conn = sqlite3.connect("jobs.db")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS jobs (
+            job_id TEXT PRIMARY KEY, 
+            filename TEXT,
+            language TEXT,
+            status TEXT, 
+            timestamp TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+init_db()
 
 
 # --- RabbitMQ Publishers ---
@@ -100,8 +119,24 @@ def rabbitmq_consumer():
     def callback(ch, method, properties, body):
         event_data = json.loads(body)
         job_id = event_data.get("job_id")
+        status = event_data.get("status")
+        timestamp = event_data.get("timestamp")
 
-        # Route event to the correct client queue using threadsafe asyncio
+        # Use ON CONFLICT to update status without overwriting the filename
+        conn = sqlite3.connect("jobs.db")
+        conn.execute(
+            """
+            INSERT INTO jobs (job_id, status, timestamp) 
+            VALUES (?, ?, ?)
+            ON CONFLICT(job_id) DO UPDATE SET 
+            status=excluded.status, 
+            timestamp=excluded.timestamp
+        """,
+            (job_id, status, timestamp),
+        )
+        conn.commit()
+        conn.close()
+
         if job_id in subscribers and loop:
             for queue in subscribers[job_id]:
                 asyncio.run_coroutine_threadsafe(queue.put(event_data), loop)
@@ -145,11 +180,26 @@ async def process_pdf(
     file: UploadFile = File(...), language: TargetLanguage = Form(TargetLanguage.polish)
 ):
     job_id = str(uuid.uuid4())
+
+    # Save the original filename to the database immediately
+    conn = sqlite3.connect("jobs.db")
+    conn.execute(
+        "INSERT INTO jobs (job_id, filename, language, status, timestamp) VALUES (?, ?, ?, ?, ?)",
+        (
+            job_id,
+            file.filename,
+            language.value,
+            "PENDING",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
     publish_job_event(job_id, "PENDING")
 
     try:
         pdf_bytes = await file.read()
-
         s3_client.put_object(
             Bucket=BUCKET_NAME,
             Key=f"{job_id}/source.pdf",
@@ -157,18 +207,30 @@ async def process_pdf(
             ContentType="application/pdf",
         )
 
-        job_payload = {"job_id": job_id, "target_lang": language.value}
+        # Include filename in the worker payload
+        job_payload = {
+            "job_id": job_id,
+            "target_lang": language.value,
+            "filename": file.filename,
+        }
         publish_to_queue("ocr_queue", job_payload)
 
-        return {
-            "job_id": job_id,
-            "status": "PENDING",
-            "message": "Document uploaded and queued for processing.",
-        }
+        return {"job_id": job_id, "status": "PENDING"}
 
     except Exception as e:
         publish_job_event(job_id, "FAILED")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/jobs")
+async def list_jobs():
+    """Returns all jobs from the SQLite database."""
+    conn = sqlite3.connect("jobs.db")
+    conn.row_factory = sqlite3.Row
+    # Assuming 24H time format from datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    rows = conn.execute("SELECT * FROM jobs ORDER BY timestamp DESC").fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
 
 if __name__ == "__main__":

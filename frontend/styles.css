@@ -14,7 +14,7 @@ body {
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     width: 100%;
-    max-width: 400px;
+    max-width: 600px;
 }
 
 h1 {
@@ -75,4 +75,96 @@ button:disabled {
 #status.error {
     color: #cc0000;
     font-weight: 600;
+}
+
+table {
+    table-layout: fixed;
+    width: 100%;
+    text-align: left;
+    border-collapse: collapse;
+}
+
+/* Remove overflow: hidden from td to allow the tooltip to escape the cell bounds */
+th, td {
+    padding: 8px;
+}
+
+.doc-name {
+    position: relative;
+    display: block;
+    width: 100%;
+    cursor: pointer;
+}
+
+/* Dedicated class to handle the truncation */
+.doc-text {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-bottom: 1px dotted #999;
+}
+
+.tooltiptext {
+    visibility: hidden;
+    width: max-content;
+    max-width: 200px; 
+    background-color: black;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 5px 10px;
+    position: absolute;
+    z-index: 10;
+    top: 100%;
+    left: 0; /* Align left to prevent extending off the screen */
+    margin-top: 4px;
+    font-weight: normal;
+    white-space: normal; /* Allow long names to wrap inside the tooltip */
+    word-wrap: break-word;
+}
+
+.doc-name:hover .tooltiptext {
+    visibility: visible;
+}
+
+#jobListContainer {
+    margin-top: 30px;
+}
+
+th {
+    border-bottom: 1px solid #cccccc;
+    padding: 8px;
+}
+
+td {
+    border-bottom: 1px solid #eeeeee;
+    padding: 8px;
+    font-size: 12px;
+}
+
+.lang-label {
+    color: #666666;
+    font-size: 10px;
+    text-transform: capitalize;
+}
+
+.disabled-link {
+    color: #999999;
+}
+
+.source-link {
+    margin-right: 10px;
+}
+
+th:nth-child(2) {
+    width: 130px; 
+}
+
+th:nth-child(3) {
+    width: 120px;
+}
+
+th:nth-child(4) {
+    width: 100px;
 }
