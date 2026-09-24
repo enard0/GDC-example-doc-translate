@@ -10,6 +10,10 @@ const languageSelect = document.getElementById('languageSelect');
 const uploadForm = document.getElementById('uploadForm');
 const statusDiv = document.getElementById('status');
 const submitBtn = document.getElementById('submitBtn');
+const jobTableBody = document.getElementById('jobTableBody');
+const MINIO_BASE_URL = "http://localhost:9000/translation-jobs";
+
+let activeJobId = null; // Tracks the job submitted from this specific tab
 
 // Populate the select dropdown
 targetLanguages.forEach(lang => {
@@ -34,11 +38,10 @@ uploadForm.addEventListener('submit', async (e) => {
     formData.append('language', languageSelect.value);
     
     statusDiv.textContent = "Uploading document to gateway...";
-    statusDiv.className = ""; // Reset styling
+    statusDiv.className = "";
     submitBtn.disabled = true;
 
     try {
-        // 1. Initiate asynchronous job via API Gateway
         const response = await fetch('http://localhost:8000/process-pdf', {
             method: 'POST',
             body: formData
@@ -49,53 +52,13 @@ uploadForm.addEventListener('submit', async (e) => {
             throw new Error(`Server Error (${response.status}): ${errorText}`);
         }
 
-        // 2. Parse the job ID from the JSON response
         const data = await response.json();
-        const jobId = data.job_id;
+        activeJobId = data.job_id; // Set the tracker
         
-        statusDiv.textContent = `Job queued (ID: ${jobId}). Waiting for worker nodes...`;
-
-        // 3. Connect to Event Service to listen for RabbitMQ state changes
-        // NOTE: Ensure your SSE Event Service is running on this port and CORS is enabled
-        const eventSource = new EventSource(`http://localhost:8000/stream/${jobId}`);
-
-        eventSource.onmessage = (event) => {
-            const eventData = JSON.parse(event.data);
-            const currentStatus = eventData.status;
-
-            // Format status
-            statusDiv.textContent = `Current state: ${currentStatus.replace('_', ' ')}...`;
-
-            // Trigger list refresh on EVERY state change, not just at the end
-            fetchAndRenderJobs();
-
-            // Handle pipeline termination states
-            if (currentStatus === "COMPLETED") {
-                eventSource.close();
-                statusDiv.textContent = "Translation complete. Downloading document...";
-                statusDiv.className = "success";
-                
-                const downloadUrl = `http://localhost:9000/translation-jobs/${jobId}/final_translated.pdf`;
-                
-                const a = document.createElement('a');
-                a.href = downloadUrl;
-                a.download = `translated_${jobId}.pdf`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                
-                submitBtn.disabled = false;
-            } else if (currentStatus === "FAILED") {
-                eventSource.close();
-                throw new Error("Translation pipeline failed during processing.");
-            }
-        };
-
-        eventSource.onerror = (err) => {
-            console.error("SSE Connection Error:", err);
-            eventSource.close();
-            throw new Error("Lost connection to event stream.");
-        };
+        statusDiv.textContent = `Job queued. Waiting for worker nodes...`;
+        
+        // Force an immediate table refresh so the pending job appears instantly
+        fetchAndRenderJobs(); 
 
     } catch (error) {
         statusDiv.textContent = `Error: ${error.message}`;
@@ -104,9 +67,7 @@ uploadForm.addEventListener('submit', async (e) => {
     }
 });
 
-const jobTableBody = document.getElementById('jobTableBody');
-const MINIO_BASE_URL = "http://localhost:9000/translation-jobs";
-
+// Fetch and render table, and handle active job state
 async function fetchAndRenderJobs() {
     try {
         const response = await fetch('http://localhost:8000/jobs');
@@ -142,14 +103,38 @@ async function fetchAndRenderJobs() {
                     ${resultLinkHtml}
                 </td>
             `;
-            
             jobTableBody.appendChild(tr);
+
+            // Handle UI updates and auto-download for the active job
+            if (job.job_id === activeJobId) {
+                if (job.status === 'COMPLETED') {
+                    statusDiv.textContent = "Translation complete. Downloading document...";
+                    statusDiv.className = "success";
+                    submitBtn.disabled = false;
+                    activeJobId = null; // Clear tracker to prevent duplicate downloads
+                    
+                    const a = document.createElement('a');
+                    a.href = resultUrl;
+                    a.setAttribute('download', ''); // The backend Content-Disposition header dictates the filename
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    
+                } else if (job.status === 'FAILED') {
+                    statusDiv.textContent = "Error: Translation pipeline failed.";
+                    statusDiv.className = "error";
+                    submitBtn.disabled = false;
+                    activeJobId = null;
+                } else {
+                    statusDiv.textContent = `Current state: ${statusFormatted}...`;
+                }
+            }
         });
     } catch (error) {
         console.error("Failed to fetch jobs:", error);
     }
 }
 
-// Call on page load
+// Initial load and polling setup
 fetchAndRenderJobs();
 setInterval(fetchAndRenderJobs, 5000);

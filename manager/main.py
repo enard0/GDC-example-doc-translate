@@ -11,17 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 import uvicorn
 import sqlite3
-
+from contextlib import asynccontextmanager
 from languages import TargetLanguage
-
-app = FastAPI(title="API Gateway & Event Service")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Change to Nginx frontend origin in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 s3_client = boto3.client(
     "s3",
@@ -52,7 +43,23 @@ def init_db():
     conn.close()
 
 
-init_db()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global loop
+    loop = asyncio.get_running_loop()
+    threading.Thread(target=rabbitmq_consumer, daemon=True).start()
+    init_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # --- RabbitMQ Publishers ---
@@ -122,7 +129,6 @@ def rabbitmq_consumer():
         status = event_data.get("status")
         timestamp = event_data.get("timestamp")
 
-        # Use ON CONFLICT to update status without overwriting the filename
         conn = sqlite3.connect("jobs.db")
         conn.execute(
             """
@@ -145,43 +151,12 @@ def rabbitmq_consumer():
     channel.start_consuming()
 
 
-@app.on_event("startup")
-async def startup_event():
-    global loop
-    loop = asyncio.get_running_loop()
-    threading.Thread(target=rabbitmq_consumer, daemon=True).start()
-
-
-# --- HTTP Endpoints ---
-@app.get("/stream/{job_id}")
-async def event_stream(request: Request, job_id: str):
-    """Frontend connects here to receive live status updates via SSE."""
-    client_queue = asyncio.Queue()
-    subscribers.setdefault(job_id, []).append(client_queue)
-
-    async def event_generator():
-        try:
-            while True:
-                if await request.is_disconnected():
-                    break
-                event = await client_queue.get()
-                yield {"data": json.dumps(event)}
-        finally:
-            if job_id in subscribers:
-                subscribers[job_id].remove(client_queue)
-                if not subscribers[job_id]:
-                    del subscribers[job_id]
-
-    return EventSourceResponse(event_generator())
-
-
 @app.post("/process-pdf")
 async def process_pdf(
     file: UploadFile = File(...), language: TargetLanguage = Form(TargetLanguage.polish)
 ):
     job_id = str(uuid.uuid4())
 
-    # Save the original filename to the database immediately
     conn = sqlite3.connect("jobs.db")
     conn.execute(
         "INSERT INTO jobs (job_id, filename, language, status, timestamp) VALUES (?, ?, ?, ?, ?)",
@@ -207,7 +182,6 @@ async def process_pdf(
             ContentType="application/pdf",
         )
 
-        # Include filename in the worker payload
         job_payload = {
             "job_id": job_id,
             "target_lang": language.value,
@@ -227,7 +201,6 @@ async def list_jobs():
     """Returns all jobs from the SQLite database."""
     conn = sqlite3.connect("jobs.db")
     conn.row_factory = sqlite3.Row
-    # Assuming 24H time format from datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     rows = conn.execute("SELECT * FROM jobs ORDER BY timestamp DESC").fetchall()
     conn.close()
     return [dict(row) for row in rows]
