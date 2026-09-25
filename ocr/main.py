@@ -16,9 +16,9 @@ extractor = PDFExtractor()
 
 s3_client = boto3.client(
     "s3",
-    endpoint_url="http://minio:9000",
-    aws_access_key_id=os.environ.get("S3_USER", "admin"),
-    aws_secret_access_key=os.environ.get("S3_PASS", "admin123password"),
+    endpoint_url="http://s3:8333",
+    aws_access_key_id=os.environ.get("S3_USER"),
+    aws_secret_access_key=os.environ.get("S3_PASS"),
     region_name="us-east-1",
 )
 BUCKET_NAME = "translation-jobs"
@@ -27,7 +27,7 @@ BUCKET_NAME = "translation-jobs"
 def publish_job_event(job_id: str, status: str):
     try:
         credentials = pika.PlainCredentials(
-            os.environ.get("RMQ_USER", "admin"), os.environ.get("RMQ_PASS", "admin123")
+            os.environ.get("RMQ_USER"), os.environ.get("RMQ_PASS")
         )
         connection = pika.BlockingConnection(
             pika.ConnectionParameters(host="rabbitmq", credentials=credentials)
@@ -49,7 +49,7 @@ def publish_job_event(job_id: str, status: str):
 
 def publish_to_queue(queue_name: str, payload: dict):
     credentials = pika.PlainCredentials(
-        os.environ.get("RMQ_USER", "admin"), os.environ.get("RMQ_PASS", "admin123")
+        os.environ.get("RMQ_USER"), os.environ.get("RMQ_PASS")
     )
     connection = pika.BlockingConnection(
         pika.ConnectionParameters(host="rabbitmq", credentials=credentials)
@@ -92,8 +92,6 @@ def process_message(ch, method, properties, body):
             ContentType="application/json",
         )
 
-        extractor.unload_models()
-
         publish_job_event(job_id, "OCR_COMPLETED")
         # Pass filename to the next queue
         publish_to_queue(
@@ -110,7 +108,7 @@ def process_message(ch, method, properties, body):
 
 def start_consuming():
     credentials = pika.PlainCredentials(
-        os.environ.get("RMQ_USER", "admin"), os.environ.get("RMQ_PASS", "admin123")
+        os.environ.get("RMQ_USER"), os.environ.get("RMQ_PASS")
     )
     connection = pika.BlockingConnection(
         pika.ConnectionParameters(host="rabbitmq", credentials=credentials, heartbeat=0)
@@ -118,8 +116,16 @@ def start_consuming():
     channel = connection.channel()
     channel.queue_declare(queue="ocr_queue", durable=True)
     channel.basic_qos(prefetch_count=1)
-    channel.basic_consume(queue="ocr_queue", on_message_callback=process_message)
-    channel.start_consuming()
+
+    for method_frame, properties, body in channel.consume(
+        queue="ocr_queue", inactivity_timeout=60
+    ):
+        if method_frame is None:
+            if extractor.pipeline is not None or extractor.ocr is not None:
+                extractor.unload_models()
+            continue
+
+        process_message(channel, method_frame, properties, body)
 
 
 @app.get("/health")

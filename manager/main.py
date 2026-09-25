@@ -6,9 +6,8 @@ import uuid
 import asyncio
 import threading
 from datetime import datetime
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from sse_starlette.sse import EventSourceResponse
 import uvicorn
 import sqlite3
 from contextlib import asynccontextmanager
@@ -16,10 +15,9 @@ from languages import TargetLanguage
 
 s3_client = boto3.client(
     "s3",
-    endpoint_url="http://minio:9000",
-    aws_access_key_id=os.environ.get("S3_USER", "admin"),
-    aws_secret_access_key=os.environ.get("S3_PASS", "admin123password"),
-    region_name="us-east-1",
+    endpoint_url="http://s3:8333",
+    aws_access_key_id=os.environ.get("S3_USER"),
+    aws_secret_access_key=os.environ.get("S3_PASS"),
 )
 BUCKET_NAME = "translation-jobs"
 
@@ -49,6 +47,39 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     threading.Thread(target=rabbitmq_consumer, daemon=True).start()
     init_db()
+
+    try:
+        s3_client.head_bucket(Bucket=BUCKET_NAME)
+    except Exception:
+        s3_client.create_bucket(Bucket=BUCKET_NAME)
+
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": ["s3:GetObject"],
+                "Resource": [f"arn:aws:s3:::{BUCKET_NAME}/*"],
+            }
+        ],
+    }
+    s3_client.put_bucket_policy(Bucket=BUCKET_NAME, Policy=json.dumps(policy))
+
+    lifecycle = {
+        "Rules": [
+            {
+                "ID": "ExpireOldJobs",
+                "Filter": {"Prefix": ""},
+                "Status": "Enabled",
+                "Expiration": {"Days": 7},
+            }
+        ]
+    }
+    s3_client.put_bucket_lifecycle_configuration(
+        Bucket=BUCKET_NAME, LifecycleConfiguration=lifecycle
+    )
+
     yield
 
 
@@ -67,7 +98,7 @@ def publish_job_event(job_id: str, status: str):
     """Publishes a state change payload to the RabbitMQ job_events exchange."""
     try:
         credentials = pika.PlainCredentials(
-            os.environ.get("RMQ_USER", "admin"), os.environ.get("RMQ_PASS", "admin123")
+            os.environ.get("RMQ_USER"), os.environ.get("RMQ_PASS")
         )
         connection = pika.BlockingConnection(
             pika.ConnectionParameters(host="rabbitmq", credentials=credentials)
@@ -91,7 +122,7 @@ def publish_job_event(job_id: str, status: str):
 
 def publish_to_queue(queue_name: str, payload: dict):
     credentials = pika.PlainCredentials(
-        os.environ.get("RMQ_USER", "admin"), os.environ.get("RMQ_PASS", "admin123")
+        os.environ.get("RMQ_USER"), os.environ.get("RMQ_PASS")
     )
     connection = pika.BlockingConnection(
         pika.ConnectionParameters(host="rabbitmq", credentials=credentials)
@@ -111,7 +142,7 @@ def publish_to_queue(queue_name: str, payload: dict):
 def rabbitmq_consumer():
     """Consumes state events and pushes them to active SSE subscribers."""
     credentials = pika.PlainCredentials(
-        os.environ.get("RMQ_USER", "admin"), os.environ.get("RMQ_PASS", "admin123")
+        os.environ.get("RMQ_USER"), os.environ.get("RMQ_PASS")
     )
     connection = pika.BlockingConnection(
         pika.ConnectionParameters(host="rabbitmq", credentials=credentials)

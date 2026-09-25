@@ -11,7 +11,7 @@ const uploadForm = document.getElementById('uploadForm');
 const statusDiv = document.getElementById('status');
 const submitBtn = document.getElementById('submitBtn');
 const jobTableBody = document.getElementById('jobTableBody');
-const MINIO_BASE_URL = "http://localhost:9000/translation-jobs";
+const MINIO_BASE_URL = "http://localhost:8333/translation-jobs/";
 
 let activeJobId = null; // Tracks the job submitted from this specific tab
 

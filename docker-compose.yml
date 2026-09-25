@@ -17,7 +17,7 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
-      minio:
+      s3:
         condition: service_healthy
 
   ocr:
@@ -45,7 +45,7 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-      minio:
+      s3:
         condition: service_healthy
 
   translate:
@@ -73,7 +73,7 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-      minio:
+      s3:
         condition: service_healthy
 
   rabbitmq:
@@ -93,38 +93,22 @@ services:
       timeout: 5s
       retries: 5
 
-  minio:
-    image: quay.io/minio/minio:latest
-    container_name: minio_storage
+  s3:
+    image: chrislusf/seaweedfs:latest
+    container_name: s3_storage
     ports:
-      - "9000:9000" 
-      - "9001:9001" 
-    environment:
-      MINIO_ROOT_USER: ${SYS_ADMIN_USER}
-      MINIO_ROOT_PASSWORD: ${SYS_ADMIN_PASS}
-    command: server /data --console-address ":9001"
+      - "8333:8333"
+      - "9333:9333" 
+    command: "server -s3 -s3.config=/etc/seaweedfs/s3.json"
     volumes:
-      - minio_data:/data
+      - s3_data:/data
+      - ./s3.json:/etc/seaweedfs/s3.json
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:9333/"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-  minio-init:
-    image: quay.io/minio/mc:latest
-    container_name: minio_setup
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      /usr/bin/mc alias set local_minio http://minio:9000 ${SYS_ADMIN_USER} ${SYS_ADMIN_PASS};
-      /usr/bin/mc mb local_minio/translation-jobs --ignore-existing;
-      /usr/bin/mc anonymous set public local_minio/translation-jobs;
-      exit 0;
-      "
-
+      
   frontend:
     image: nginx:alpine
     container_name: web_frontend
@@ -137,4 +121,4 @@ services:
       
 volumes:
   rabbitmq_data:
-  minio_data:
+  s3_data:

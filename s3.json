@@ -1,0 +1,15 @@
+{
+  "identities": [
+    {
+      "name": "admin",
+      "credentials": [
+        {
+          "accessKey": "ExampleAdmin",
+          "secretKey": "ExamplePassword"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write"]
+    }
+  ],
+  "signingKey": "random-secret-string-for-sts-tokens"
+}
