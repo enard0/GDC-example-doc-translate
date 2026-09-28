@@ -2,8 +2,8 @@
 set -e
 
 # Configuration
-MODELS_DIR="./ocr/models"
-LLM_DIR="./translate/Hy-MT2-7B"
+MODELS_DIR="./models"
+LLM_DIR="./models/Hy-MT2-7B"
 
 echo "Initializing build process..."
 
