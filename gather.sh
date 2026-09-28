@@ -7,13 +7,18 @@ if [ -z "$TARGET_DIR" ]; then
     exit 1
 fi
 
+if [ ! -d "$TARGET_DIR" ]; then
+    mkdir -p "$TARGET_DIR"
+elif [ "$(ls -A "$TARGET_DIR")" ]; then
+    echo "Error: Directory '$TARGET_DIR' contains files."
+    exit 1
+fi
+
 if [ ! -d "models" ]; then
     echo "Error: Required directory 'models' does not exist."
     echo "please run build.sh"
     exit 1
 fi
-
-mkdir -p "$TARGET_DIR"
 
 IMAGES=$(docker compose config | grep 'image:' | awk '{print $2}')
 

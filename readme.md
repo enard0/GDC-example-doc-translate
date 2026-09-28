@@ -1,46 +1,37 @@
-# API Deployment and Usage
+# Document Translation System
 
-Follow these steps to initialize and interact with the translation pipeline in a standard environment.
+## Prerequisites
+To run this software, you need the following tools and environment:
+* Docker
+* Linux or WSL
+* A machine with internet access for the initial setup
 
-*   Execute the deployment script to build the Docker images and start the internal network containers:
-    ```bash
-    ./build_and_deploy.sh
-    ```
-*   Open a web browser and navigate to the interactive UI at `http://localhost`.
-*   Upload a document using the `file` parameter and specify the target language using the `language` form field (default is `polish`). Has to be name of the language, not code.
-*   Execute the request to process the document and receive the translated PDF as a direct file download.
+## API Deployment and Usage
+Follow these steps to initialize and interact with the translation pipeline in a standard environment:
 
----
+1. Execute the deployment script to build and start the services:
+   ```bash
+   ./build_and_deploy.sh
+   ```
+2. Open a web browser and navigate to the interactive UI at `http://localhost`.
+3. Upload a document and specify the target language using the form fields.
+4. Execute the request to process the document and receive the translated PDF as a direct file download.
 
-# Air-Gapped Environment Migration
+## Air-Gapped Environment Migration
+Follow these steps to create a portable package that can be moved to a machine with no internet access.
 
-To deploy the system on a machine without internet access, export the required dependencies from a connected machine and import them to the offline target.
+### 1. Export (Online Machine)
+* Ensure the service has been initialized correctly by following the standard deployment steps.
+* Run the provided gathering script:
+  ```bash
+  ./gather.sh target_directory
+  ```
+* If the target directory does not exist, the script will create it. 
+* The target directory must not contain any files prior to execution.
 
-## Export (Online Machine)
-
-*   Save the compiled Docker images to self-contained tar archives using the `docker save` command:
-    ```bash
-    docker save -o ocr-service.tar ocr-service:latest
-    docker save -o translate-service.tar translate-service:latest
-    docker save -o api-gateway.tar api-gateway:latest
-    ```
-*   Verify the required model weights (e.g., the `Hy-MT2-7B` directory) and font assets are fully downloaded to your local filesystem.
-*   Compress the model directory and fonts into a portable archive:
-    ```bash
-    tar -czvf assets.tar.gz ./translate/Hy-MT2-7B ./fonts
-    ```
-
-## Import (Offline Machine)
-
-*   Transfer the exported `.tar` and `.tar.gz` archives to the offline machine using physical media.
-*   Load the Docker images directly into the local Docker daemon to bypass image registry pulls:
-    ```bash
-    docker load -i ocr-service.tar
-    docker load -i translate-service.tar
-    docker load -i api-gateway.tar
-    ```
-*   Extract the model and font archives into the persistent volume directory referenced by your deployment configuration:
-    ```bash
-    tar -xzvf assets.tar.gz
-    ```
-*   Run `build_and_deploy.sh` to start the initialized services utilizing the locally cached images and assets.
+### 2. Import (Offline Machine)
+* Transfer the created folder to the offline machine.
+* Run the deployment script to unpack the images and start the service locally:
+  ```bash
+  ./deploy.sh
+  ```
