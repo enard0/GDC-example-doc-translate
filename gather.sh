@@ -32,9 +32,8 @@ echo "Copying runtime configuration and files..."
 cp docker-compose.yml "$TARGET_DIR/"
 cp deploy.sh "$TARGET_DIR/"
 
-if [ -f ".env" ]; then
-    cp .env "$TARGET_DIR/"
-fi
+cp .env "$TARGET_DIR/"
+cp s3.json "$TARGET_DIR/"
 
 if [ -d "frontend" ]; then
     cp -r frontend "$TARGET_DIR/"
