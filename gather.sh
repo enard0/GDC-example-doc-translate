@@ -44,6 +44,6 @@ if [ -d "frontend" ]; then
     cp -r frontend "$TARGET_DIR/"
 fi
 
-cp -r models "$TARGET_DIR/"
+rsync -a --exclude='.cache' models/ "$TARGET_DIR/models"
 
 echo "Gather complete. You can now transfer the '$TARGET_DIR'."

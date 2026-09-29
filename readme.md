@@ -9,13 +9,14 @@ To run this software, you need the following tools and environment:
 ## API Deployment and Usage
 Follow these steps to initialize and interact with the translation pipeline in a standard environment:
 
-1. Execute the deployment script to build and start the services:
+1. Execute the deployment script to build the services:
    ```bash
    ./build_and_deploy.sh
    ```
-2. Open a web browser and navigate to the interactive UI at `http://localhost`.
-3. Upload a document and specify the target language using the form fields.
-4. Execute the request to process the document and receive the translated PDF as a direct file download.
+2. Run `docker compose up -d` to start the services.
+3. Open a web browser and navigate to the interactive UI at `http://localhost`.
+4. Upload a document and specify the target language using the form fields.
+5. Execute the request to process the document and receive the translated PDF as a direct file download.
 
 ## Air-Gapped Environment Migration
 Follow these steps to create a portable package that can be moved to a machine with no internet access.

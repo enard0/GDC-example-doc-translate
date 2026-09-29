@@ -14,6 +14,7 @@ mkdir -p "$LLM_DIR"
 # 2. Build Docker Images FIRST
 echo "Building Docker images..."
 docker compose build
+docker compose pull
 
 # 3. Download Translation Model via temporary Python container
 echo "Fetching Translation Model (Hy-MT2-7B)..."
@@ -39,7 +40,7 @@ for model in "${models[@]}"; do
         docker compose run --rm \
             -v "$(pwd)/$MODELS_DIR:/root/.paddlex/official_models" \
             ocr \
-            python3 -c "from paddleocr import PaddleOCRVL, PaddleOCR; PaddleOCR(); PaddleOCRVL()"
+            python3 -c "from paddleocr import PaddleOCRVL, PaddleOCR; PaddleOCR(use_gpu=False); PaddleOCRVL(use_gpu=False)"
         break
     fi
 done
@@ -51,8 +52,5 @@ fi
 echo "Shutting down temporary containers and freeing resources..."
 docker compose down --remove-orphans
 
-# 6. Deploy Containers
-echo "Deploying services..."
-docker compose up -d
-
-echo "Deployment complete. Services are running in the background."
+echo "Services have been built and models downloaded."
+echo "If you want to start the services, run: docker compose up -d"
