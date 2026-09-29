@@ -14,7 +14,7 @@ mkdir -p "$LLM_DIR"
 # 2. Build Docker Images FIRST
 echo "Building Docker images..."
 docker compose build
-docker compose pull
+docker compose pull --ignore-buildable
 
 # 3. Download Translation Model via temporary Python container
 echo "Fetching Translation Model (Hy-MT2-7B)..."
