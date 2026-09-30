@@ -40,7 +40,7 @@ for model in "${models[@]}"; do
         docker compose run --rm \
             -v "$(pwd)/$MODELS_DIR:/root/.paddlex/official_models" \
             ocr \
-            python3 -c "from paddleocr import PaddleOCRVL, PaddleOCR; PaddleOCR(use_gpu=False); PaddleOCRVL(use_gpu=False)"
+            python3 -c "from paddleocr import PaddleOCRVL, PaddleOCR; PaddleOCR(); PaddleOCRVL()"
         break
     fi
 done
